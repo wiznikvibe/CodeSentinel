@@ -31,3 +31,6 @@ sonarqube-quality-gate.json
 
 # ECS
 infra/ecs/
+
+# Git worktrees
+.worktrees/
