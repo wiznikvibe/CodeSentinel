@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["api", "agents", "core", "graph", "infra", "jenkins"]
+
+[project]
+name = "codesentinel"
+version = "0.1.0"
+description = "Multi-Agent Code Review / QA Automation"
+requires-python = ">=3.10"
+license = "MIT"
+
+dependencies = [
+    "fastapi>=0.109.0",
+    "langgraph>=0.0.30",
+    "langchain>=0.3.0",
+    "pydantic>=2.7.0",
+    "uvicorn[standard]>=0.27.0",
+    "python-jenkins>=1.0.0",
+    "sonarqube-client>=0.0.5",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.23.0",
+    "httpx>=0.27.0",
+    "ruff>=0.8.0",
+    "mypy>=1.8.0",
+]
+
+[tool.ruff]
+format = "ruff.format"
+line-length = 88
+
+[tool.mypy.default_settings]
+strict = true
+disallow_untyped_definitions = true
+ignore_missing_imports = true
