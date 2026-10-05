@@ -89,6 +89,60 @@ def test_supervisor_terminates_after_all_workers():
         assert result.goto == "END"  # supervisor terminates the graph
 
 
+def test_supervisor_routes_to_test_generator():
+    """Supervisor must route to test_generator when selected by LLM."""
+    from agents.supervisor import supervisor_node
+
+    state: ReviewState = {
+        "pr_number": 123,
+        "repo_url": "https://github.com/example/repo",
+        "diff": "@@ -1,3 +1,4 @@\ndef add(a, b):\n    return a + b\n",
+        "files": ["src/math.py"],
+        "findings": [],
+        "current_agent": "security_auditor",
+        "metadata": {},
+    }
+
+    with patch("agents.supervisor.get_llm") as mock_get_llm:
+        mock_llm = MagicMock()
+        mock_llm.invoke.return_value = "test_generator"
+        mock_get_llm.return_value = mock_llm
+
+        result = supervisor_node(state)
+        from langgraph.types import Command
+        # Should return a Command routing to test_generator
+        assert isinstance(result, Command)
+        assert result.goto == "test_generator"
+
+
+def test_supervisor_avoids_repeated_dispatch():
+    """Supervisor must not repeatedly dispatch the same worker consecutively."""
+    from agents.supervisor import supervisor_node
+
+    # State where code_reviewer just ran, supervisor should not dispatch code_reviewer again
+    state: ReviewState = {
+        "pr_number": 123,
+        "repo_url": "https://github.com/example/repo",
+        "diff": "@@ -1,3 +1,4 @@\ndef add(a, b):\n    return a + b\n",
+        "files": ["src/math.py"],
+        "findings": [],
+        "current_agent": "code_reviewer",
+        "metadata": {"completed": ["code_reviewer"]},
+    }
+
+    with patch("agents.supervisor.get_llm") as mock_get_llm:
+        mock_llm = MagicMock()
+        # LLM tries to dispatch the same worker again
+        mock_llm.invoke.return_value = "code_reviewer"
+        mock_get_llm.return_value = mock_llm
+
+        result = supervisor_node(state)
+        from langgraph.types import Command
+        # Should default to END to avoid infinite loop / repeated dispatch
+        assert isinstance(result, Command)
+        assert result.goto == "END"
+
+
 def test_supervisor_handles_invalid_llm_output():
     """Supervisor must default to END when LLM returns invalid destination."""
     from agents.supervisor import supervisor_node
