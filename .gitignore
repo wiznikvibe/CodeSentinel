@@ -24,7 +24,6 @@ __pycache__/
 
 # Docker
 .dockerinit
-Dockerfile
 
 # SonarQube
 sonarqube-quality-gate.json
