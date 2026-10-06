@@ -1,0 +1,176 @@
+# ==============================================================================
+# CodeSentinel - Multi-Agent Code Review / QA Automation
+# Docker Compose configuration
+#
+# Services:
+#   - api      : FastAPI web service (port 8000)
+#   - worker   : LangGraph background worker (same image, different command)
+#   - postgres : LangGraph checkpointer database
+#   - redis    : Optional caching / job queue
+#   - localstack : AWS S3/SQS stub for local development
+# ==============================================================================
+
+name: codesentinel
+
+services:
+  # ---------------------------- API service ----------------------------
+  api:
+    image: code-review-agent:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: codesentinel-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - API_ENV=development
+      # Load all config vars from .env
+      - LLM_PROVIDER=${LLM_PROVIDER:-openai}
+      - LLM_MODEL=${LLM_MODEL:-gpt-4o-mini}
+      - LLM_TEMPERATURE=${LLM_TEMPERATURE:-0.1}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - CHECKPOINT_DB_URL=${CHECKPOINT_DB_URL:-postgresql://codesentinel:codesentinel@postgres:5432/codesentinel}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - JENKINS_URL=${JENKINS_URL:-http://localhost:8080}
+      - JENKINS_USER=${JENKINS_USER:-agent-bot}
+      - JENKINS_TOKEN=${JENKINS_TOKEN:-}
+      - SONARQUBE_URL=${SONARQUBE_URL:-http://localhost:9000}
+      - SONARQUBE_TOKEN=${SONARQUBE_TOKEN:-}
+      - ECS_CLUSTER=${ECS_CLUSTER:-}
+      - ECS_TASK_FAMILY=${ECS_TASK_FAMILY:-code-review-agent}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - AWS_ENDPOINT_URL=${AWS_ENDPOINT_URL:-http://localstack:4566}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - codesentinel-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # ---------------------------- Worker service ----------------------------
+  # Runs LangGraph graph execution / background tasks. Same image as the API,
+  # but invoked with a worker command (e.g. a graph worker or Celery-style task runner).
+  # Customize this command to point at your graph runner / task queue.
+  worker:
+    image: code-review-agent:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: codesentinel-worker
+    restart: unless-stopped
+    command: ["uv", "run", "python", "-m", "graph.worker"]
+    environment:
+      - API_ENV=worker
+      # Load all config vars from .env
+      - LLM_PROVIDER=${LLM_PROVIDER:-openai}
+      - LLM_MODEL=${LLM_MODEL:-gpt-4o-mini}
+      - LLM_TEMPERATURE=${LLM_TEMPERATURE:-0.1}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - CHECKPOINT_DB_URL=${CHECKPOINT_DB_URL:-postgresql://codesentinel:codesentinel@postgres:5432/codesentinel}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - JENKINS_URL=${JENKINS_URL:-http://localhost:8080}
+      - JENKINS_USER=${JENKINS_USER:-agent-bot}
+      - JENKINS_TOKEN=${JENKINS_TOKEN:-}
+      - SONARQUBE_URL=${SONARQUBE_URL:-http://localhost:9000}
+      - SONARQUBE_TOKEN=${SONARQUBE_TOKEN:-}
+      - ECS_CLUSTER=${ECS_CLUSTER:-}
+      - ECS_TASK_FAMILY=${ECS_TASK_FAMILY:-code-review-agent}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - AWS_ENDPOINT_URL=${AWS_ENDPOINT_URL:-http://localstack:4566}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - codesentinel-net
+
+  # ---------------------------- PostgreSQL ----------------------------
+  # Hosted checkpointer for LangGraph (PostgresSaver). Persisted volume.
+  postgres:
+    image: postgres:17-alpine
+    container_name: codesentinel-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=codesentinel
+      - POSTGRES_PASSWORD=codesentinel
+      - POSTGRES_DB=codesentinel
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U codesentinel -d codesentinel"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - codesentinel-net
+
+  # ---------------------------- Redis ----------------------------
+  # Optional caching / job queue.
+  redis:
+    image: redis:7-alpine
+    container_name: codesentinel-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - codesentinel-net
+
+  # ---------------------------- LocalStack ----------------------------
+  # Local AWS S3/SQS stub for local ECS/deployment testing.
+  localstack:
+    image: localstack/localstack:3-alpine
+    container_name: codesentinel-localstack
+    restart: unless-stopped
+    environment:
+      - SERVICES=s3,sqs
+      - LOCALSTACK_HTTP_PORT=4566
+      - AWS_DEFAULT_REGION=us-east-1
+    ports:
+      - "4566:4566"
+      - "4571:4571"
+    volumes:
+      - localstack_data:/var/lib/localstack
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - codesentinel-net
+
+networks:
+  codesentinel-net:
+    driver: bridge
+    name: codesentinel-net
+
+volumes:
+  postgres_data:
+    name: codesentinel-postgres_data
+  redis_data:
+    name: codesentinel-redis_data
+  localstack_data:
+    name: codesentinel-localstack_data

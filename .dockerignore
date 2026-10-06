@@ -1,0 +1,47 @@
+# Git and version control
+.git
+.gitignore
+
+# Python virtual environment
+.venv
+env/
+venv/
+
+# Python bytecode
+__pycache__
+*.py[cod]
+*$py.class
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Tests (not needed in build context)
+tests/
+
+# Documentation
+README.md
+CHANGELOG.md
+
+# Environment files (except .env.example)
+.env
+
+# Docker-related
+Dockerfile*
+docker-compose*.yml
+.docker
+
+# Logs
+logs/
+*.log
+
+# Misc
+*.egg-info
+dist/
+build/
